@@ -10,6 +10,7 @@
 #include <stdio.h>
 #include <malloc.h>
 #include <string.h>
+#include <syslog.h>
 #include <sys/ioctl.h>
 #include <sys/mman.h>
 #include <sys/stat.h>
@@ -17,6 +18,7 @@
 #include <unistd.h>
 
 /* Include PAM headers */
+
 #include <security/pam_appl.h>
 #include <security/pam_modules.h>
 #include <security/pam_modules.h>
@@ -25,17 +27,19 @@
 
 #include <security_monitor/api/api.h>
 
+FILE *log_file;
+
 struct arg_start_enclave { api_result_t result; uintptr_t enclave_start; uintptr_t enclave_end; };
 #define MAJOR_NUM 's'
 #define IOCTL_START_ENCLAVE _IOR(MAJOR_NUM, 0x1, struct run_enclave*)
 
-int call_enclave(const char *user, const char *password) {
+int call_enclave(pam_handle_t * pamh, const char *user, const char *password) {
     int fd = 0;
     struct arg_start_enclave val;
     fd = open("/dev/security_monitor", O_RDWR);
-    printf("file descriptor fd(%d)", fd);
+    fprintf(log_file, "file descriptor fd(%d)", fd); fflush(log_file);
     if (fd < 0) {
-        printf("File open error: %s\n", strerror(errno));
+        fprintf(log_file, "File open error: %s\n", strerror(errno)); fflush(log_file);
         return PAM_IGNORE;
     }
     FILE *ptr;
@@ -44,10 +48,10 @@ int call_enclave(const char *user, const char *password) {
     struct stat statbuf;
     stat(enclave_bin_name, &statbuf);
     off_t sizefile = statbuf.st_size;
-    printf("Size enclave.bin (%ld)\n", sizefile);
+    fprintf(log_file, "Size enclave.bin (%ld)\n", sizefile); fflush(log_file);
     char* enclave = memalign(1<<12,sizefile);
     size_t sizecopied = fread(enclave, sizefile, 1, ptr);
-    printf("Size copied: %ld", sizecopied);
+    fprintf(log_file, "Size copied: %ld", sizecopied);
     fclose(ptr);
 
     /* Allocate memory to share with the enclave. Need to find a proper place for that */
@@ -56,29 +60,30 @@ int call_enclave(const char *user, const char *password) {
     char* shared_enclave = (char *)mmap((void *)begin_shared, shared_size, PROT_READ | PROT_WRITE , MAP_PRIVATE | MAP_ANONYMOUS | MAP_FIXED, -1, 0); // 
     if (shared_enclave == MAP_FAILED) {
         perror("Shared memory not allocated in a correct place, last errno: ");
-	return PAM_IGNORE;
+        return PAM_IGNORE;
     }
-    printf("Address for the shared enclave %08lx", (long)shared_enclave);
+    fprintf(log_file, "Address for the shared enclave %08lx", (long)shared_enclave);
 
     memset(shared_enclave, 0, shared_size);
     snprintf(shared_enclave, shared_size, "%s\n%s\n", user, password);
 
     val.enclave_start = (long)enclave;
     val.enclave_end = (long)(enclave + sizefile);
-    printf("Sending ioctl CMD 2\n");
-    fflush(stdout);
     int ret = ioctl(fd, IOCTL_START_ENCLAVE, &val);
-    printf("ioctl ret val (%d) errno (%d)\n", ret, errno);
+
+    int response = PAM_AUTH_ERR;
     if (ret == 0) {
-        printf("Received from enclave: %s\n", shared_enclave); 
+        fprintf(log_file, "Received from enclave: %s\n", shared_enclave); 
+        if (strcmp(shared_enclave, "authorized") == 0)
+            response = PAM_SUCCESS;
+    } else {
+        fprintf(log_file, "IOCTL error: %s\n", strerror(errno));
     }
-    fflush(stdout);
-    perror("IOCTL error: ");
 
     memset(shared_enclave, 0, shared_size);
     munmap(shared_enclave, shared_size);
     close(fd);
-    return PAM_SUCCESS;
+    return response;
 }
 
 /* PAM entry point for session creation */
@@ -103,28 +108,30 @@ int pam_sm_authenticate(pam_handle_t *pamh, int flags, int argc, const char **ar
     char *password = NULL;
     int pgu_ret, pp_ret, ce_ret;
 
+    log_file = fopen("/root/pam.log", "a");
+
     pgu_ret = pam_get_user(pamh, &user, NULL);
     if (pgu_ret != PAM_SUCCESS || user == NULL) {
+	fprintf(log_file, "pam_get_user returned %d\n", pgu_ret);
+	fclose(log_file);
         return(PAM_IGNORE);
     }
-    fprintf(stderr, "user %s\n", user);
+    fprintf(log_file, "user %s\n", user); fflush(log_file);
 
     pp_ret = pam_prompt (pamh, PAM_PROMPT_ECHO_OFF, &password, "Password: ");
-    fprintf(stderr, "password %s %d\n", password, pp_ret);
-
+    fprintf(log_file, "getting password pp_ret %d\n", pp_ret); fflush(log_file);
     if (pp_ret != PAM_SUCCESS) {
 	_pam_overwrite(password);
+	fclose(log_file);
         return PAM_IGNORE;
     }
 
-    ce_ret = call_enclave(user, password);
+    ce_ret = call_enclave(pamh, user, password);
+    fprintf(log_file, "enclave returned %d\n", ce_ret);
     _pam_overwrite(password);
+    fclose(log_file);
 
-    if (ce_ret == PAM_SUCCESS) {
-        return PAM_SUCCESS;
-    }
-
-    return(PAM_IGNORE);
+    return ce_ret;
 }
 
 /*
@@ -145,13 +152,13 @@ int pam_sm_chauthtok(pam_handle_t *pamh, int flags, int argc, const char **argv)
     if (pgu_ret != PAM_SUCCESS || user == NULL) {
         return(PAM_IGNORE);
     }
-    fprintf(stderr, "user %s\n", user);
+    pam_syslog(pamh, LOG_AUTH|LOG_NOTICE, "user %s\n", user);
 
     pgi_ret = pam_get_item(pamh, PAM_AUTHTOK, (const void **)&authtok);
-    if (pgu_ret != PAM_SUCCESS || authtok == NULL) {
+    if (pgi_ret != PAM_SUCCESS || authtok == NULL) {
         return(PAM_IGNORE);
     }
-    fprintf(stderr, "authtok %s %d\n", authtok, pgi_ret);
-    return(PAM_IGNORE);
+
+    return(PAM_SUCCESS);
 }
 
