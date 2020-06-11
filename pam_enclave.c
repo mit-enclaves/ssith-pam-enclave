@@ -68,7 +68,7 @@ int call_enclave(pam_handle_t * pamh, const char *user, const char *password) {
     snprintf(shared_enclave, shared_size, "%s\n%s\n", user, password);
 
     val.enclave_start = (long)enclave;
-    val.enclave_end = (long)(enclave + sizefile);
+    val.enclave_end = (long)(enclave + sizefile - 4096); // last page contains nonces and measurement
     int ret = ioctl(fd, IOCTL_START_ENCLAVE, &val);
 
     int response = PAM_AUTH_ERR;
