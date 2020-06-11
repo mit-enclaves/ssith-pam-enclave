@@ -31,9 +31,6 @@ rootfs:
 	mount ~/rootfs.ext2 /mnt
 	rm -f /mnt/dev/null
 	mknod /mnt/dev/null c 1 3 || true
-	mknod /mnt/dev/console c 5 1 || true
-	mknod /mnt/dev/ttyS0 c 4 64 || true
-	mknod /mnt/dev/security_monitor c 10 62 || true
 	install -m 0644 pam.d.testing /mnt/etc/pam.d/testing
 	install $(BUILD)/pam_enclave.so /mnt/lib/security/pam_enclave.so
 	mkdir -p /mnt/test
