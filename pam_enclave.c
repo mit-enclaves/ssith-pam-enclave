@@ -43,7 +43,7 @@ int call_enclave(pam_handle_t * pamh, const char *user, const char *password) {
         return PAM_IGNORE;
     }
     FILE *ptr;
-    const char *enclave_bin_name = "/test/enclave.bin";
+    const char *enclave_bin_name = "/ssith/pam-enclave.bin";
     ptr = fopen(enclave_bin_name,"rb");
     struct stat statbuf;
     stat(enclave_bin_name, &statbuf);
@@ -74,6 +74,7 @@ int call_enclave(pam_handle_t * pamh, const char *user, const char *password) {
     int response = PAM_AUTH_ERR;
     if (ret == 0) {
         fprintf(log_file, "Received from enclave: %s\n", shared_enclave); 
+        fprintf(stderr, "Received from enclave: %s\n", shared_enclave); 
         if (strcmp(shared_enclave, "authorized") == 0)
             response = PAM_SUCCESS;
     } else {

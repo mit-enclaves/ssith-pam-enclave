@@ -12,8 +12,8 @@ OBJCOPY = $(CROSS_COMPILE)objcopy
 
 API_DIR = ../../
 
-ENCLAVE_ELF := $(BUILD_DIR)/enclave.elf
-ENCLAVE_BIN := $(BUILD_DIR)/enclave.bin
+ENCLAVE_ELF := $(BUILD_DIR)/pam-enclave.elf
+ENCLAVE_BIN := $(BUILD_DIR)/pam-enclave.bin
 
 ENCLAVE_INCLUDES := \
 	$(PLATFORM_DIR) \
@@ -22,7 +22,10 @@ ENCLAVE_INCLUDES := \
 ENCLAVE_COMMON_SRC := \
 	enclave_entry.S \
 	enclave_main.c \
+	$(SM)/src/clib/memncmp.c \
 	$(SM)/src/clib/strcmp.c \
+	$(SM)/src/clib/strlen.c \
+	$(SM)/src/clib/snprintf.c \
 	enclave_stack.S
 
 all: enclave
@@ -32,7 +35,7 @@ ENCLAVE_LD := enclave.lds
 
 $(ENCLAVE_ELF): $(ENCLAVE_COMMON_SRC) $(ENCLAVE_LD) $(BUILD_DIR)
 	@echo BUILD $@ 
-	@$(CC) $(CFLAGS) $(addprefix -I , $(ENCLAVE_INCLUDES)) $(LDFLAGS) -T $(ENCLAVE_LD) $< $(ENCLAVE_COMMON_SRC) -o $@
+	$(CC) $(CFLAGS) $(addprefix -I , $(ENCLAVE_INCLUDES)) $(LDFLAGS) -T $(ENCLAVE_LD) $< $(ENCLAVE_COMMON_SRC) -o $@
 
 $(ENCLAVE_BIN): $(ENCLAVE_ELF)
 	@echo OBJCOPY $@
