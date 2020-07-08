@@ -30,10 +30,13 @@ ENCLAVE_COMMON_SRC := \
 
 all: enclave
 
+entries.h: entries.h.in
+	if [ ! -f entries.h ]; then cp entries.h.in entries.h; fi
+
 ENCLAVE_LD := enclave.lds
 .INTERMEDIATE: $(SM_LD)
 
-$(ENCLAVE_ELF): $(ENCLAVE_COMMON_SRC) $(ENCLAVE_LD) $(BUILD_DIR)
+$(ENCLAVE_ELF): $(ENCLAVE_COMMON_SRC) entries.h $(ENCLAVE_LD) $(BUILD_DIR)
 	@echo BUILD $@ 
 	$(CC) $(CFLAGS) $(addprefix -I , $(ENCLAVE_INCLUDES)) $(LDFLAGS) -T $(ENCLAVE_LD) $< $(ENCLAVE_COMMON_SRC) -o $@
 

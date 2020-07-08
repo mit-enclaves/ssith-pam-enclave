@@ -1,0 +1,9 @@
+// fill in passwords as desired
+    { "ubuntu", "rootme" },
+    { "root", "" },
+    { "bob", "" },
+    { "alice", "" },
+    { "linda", "" },
+    { "ben", "" },
+    { "centos", "" },
+    { "debian", "" },
